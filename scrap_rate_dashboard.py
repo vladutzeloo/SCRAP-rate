@@ -312,6 +312,10 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     dates = sorted([d for d in scrap_data['by_date'].keys() if d])
     date_range = f"{dates[0]} to {dates[-1]}" if dates else "Unknown"
 
+    # Calculate weekly and monthly scrap rates
+    weekly_stats = calculate_weekly_stats(scrap_data)
+    monthly_stats = calculate_monthly_stats(scrap_data)
+
     # Calculate statistics by machine
     machine_stats = calculate_machine_stats(scrap_data)
 
@@ -333,6 +337,8 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     controlor_stats_json = json.dumps(controlor_stats)
     part_stats_json = json.dumps(part_stats)
     category_json = json.dumps(category_data)
+    weekly_stats_json = json.dumps(weekly_stats)
+    monthly_stats_json = json.dumps(monthly_stats)
 
     # Current date and time
     current_datetime = datetime.now().strftime("%B %d, %Y at %I:%M %p")
@@ -710,6 +716,51 @@ def generate_scrap_dashboard(scrap_data, excel_file):
             </div>
         </div>
 
+        <!-- Weekly & Monthly Section -->
+        <div class="analytics-section">
+            <h2 class="section-title">Weekly & Monthly Scrap Rate Analysis</h2>
+
+            <div class="charts-grid">
+                <!-- Weekly Scrap Rate Table -->
+                <div class="data-table-container">
+                    <h3 class="chart-title"><i class="fas fa-calendar-week"></i> Weekly Scrap Rate</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Week</th>
+                                <th>Parts</th>
+                                <th>NOK</th>
+                                <th>Scrap Rate</th>
+                                <th>Quality</th>
+                            </tr>
+                        </thead>
+                        <tbody id="weeklyTableBody">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Monthly Scrap Rate Table -->
+                <div class="data-table-container">
+                    <h3 class="chart-title"><i class="fas fa-calendar-alt"></i> Monthly Scrap Rate</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th>Parts</th>
+                                <th>NOK</th>
+                                <th>Scrap Rate</th>
+                                <th>Quality</th>
+                            </tr>
+                        </thead>
+                        <tbody id="monthlyTableBody">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- Tables Section -->
         <div class="table-section">
             <h2 class="section-title">Detailed Analysis</h2>
@@ -764,6 +815,8 @@ def generate_scrap_dashboard(scrap_data, excel_file):
         const controlorStats = {controlor_stats_json};
         const partStats = {part_stats_json};
         const categoryData = {category_json};
+        const weeklyStats = {weekly_stats_json};
+        const monthlyStats = {monthly_stats_json};
 
         // Chart colors (red theme)
         const chartColors = {{
@@ -782,6 +835,7 @@ def generate_scrap_dashboard(scrap_data, excel_file):
             createDistributionChart();
             createCategoryChart();
             createControlorChart();
+            populateWeeklyMonthlyTables();
             populateTables();
         }});
 
@@ -1103,6 +1157,40 @@ def generate_scrap_dashboard(scrap_data, excel_file):
             }});
         }}
 
+        function populateWeeklyMonthlyTables() {{
+            // Populate weekly table
+            const weeklyTableBody = document.getElementById('weeklyTableBody');
+            weeklyStats.forEach((week) => {{
+                const row = document.createElement('tr');
+                const scrapClass = week.scrap_rate > 5 ? 'scrap-rate-high' :
+                                  week.scrap_rate > 2 ? 'scrap-rate-medium' : 'scrap-rate-low';
+                row.innerHTML = `
+                    <td>${{week.week_label}}</td>
+                    <td>${{week.total_parts.toLocaleString()}}</td>
+                    <td>${{week.total_nok.toLocaleString()}}</td>
+                    <td><span class="${{scrapClass}}">${{week.scrap_rate.toFixed(2)}}%</span></td>
+                    <td><span class="quality-rate">${{week.quality_rate.toFixed(2)}}%</span></td>
+                `;
+                weeklyTableBody.appendChild(row);
+            }});
+
+            // Populate monthly table
+            const monthlyTableBody = document.getElementById('monthlyTableBody');
+            monthlyStats.forEach((month) => {{
+                const row = document.createElement('tr');
+                const scrapClass = month.scrap_rate > 5 ? 'scrap-rate-high' :
+                                  month.scrap_rate > 2 ? 'scrap-rate-medium' : 'scrap-rate-low';
+                row.innerHTML = `
+                    <td>${{month.month_label}}</td>
+                    <td>${{month.total_parts.toLocaleString()}}</td>
+                    <td>${{month.total_nok.toLocaleString()}}</td>
+                    <td><span class="${{scrapClass}}">${{month.scrap_rate.toFixed(2)}}%</span></td>
+                    <td><span class="quality-rate">${{month.quality_rate.toFixed(2)}}%</span></td>
+                `;
+                monthlyTableBody.appendChild(row);
+            }});
+        }}
+
         function populateTables() {{
             // Populate machine table
             const machineTableBody = document.getElementById('machineTableBody');
@@ -1148,6 +1236,111 @@ def generate_scrap_dashboard(scrap_data, excel_file):
 </html>"""
 
     return html
+
+def calculate_weekly_stats(scrap_data):
+    """Calculate scrap rate by week"""
+    from datetime import datetime, timedelta
+
+    weekly_data = {}
+
+    for date_str, records in scrap_data['by_date'].items():
+        try:
+            # Parse date and get ISO week number
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            year_week = date_obj.strftime('%Y-W%U')  # Format: YYYY-W##
+
+            if year_week not in weekly_data:
+                weekly_data[year_week] = {
+                    'total_parts': 0,
+                    'total_ok': 0,
+                    'total_nok': 0,
+                    'start_date': date_obj,
+                    'end_date': date_obj
+                }
+
+            # Update date range
+            if date_obj < weekly_data[year_week]['start_date']:
+                weekly_data[year_week]['start_date'] = date_obj
+            if date_obj > weekly_data[year_week]['end_date']:
+                weekly_data[year_week]['end_date'] = date_obj
+
+            # Aggregate parts
+            for record in records:
+                weekly_data[year_week]['total_parts'] += record.get('_total_parts', 0) or 0
+                weekly_data[year_week]['total_ok'] += record.get('_total_ok', 0) or 0
+                weekly_data[year_week]['total_nok'] += record.get('_total_nok', 0) or 0
+        except:
+            continue
+
+    # Calculate scrap rates and format output
+    weekly_summary = []
+    for week, data in sorted(weekly_data.items(), reverse=True):
+        scrap_rate = (data['total_nok'] / data['total_parts'] * 100) if data['total_parts'] > 0 else 0
+        quality_rate = (data['total_ok'] / data['total_parts'] * 100) if data['total_parts'] > 0 else 0
+
+        weekly_summary.append({
+            'week': week,
+            'week_label': f"Week {week.split('-W')[1]} ({data['start_date'].strftime('%b %d')} - {data['end_date'].strftime('%b %d')})",
+            'total_parts': data['total_parts'],
+            'total_ok': data['total_ok'],
+            'total_nok': data['total_nok'],
+            'scrap_rate': round(scrap_rate, 2),
+            'quality_rate': round(quality_rate, 2)
+        })
+
+    return weekly_summary
+
+def calculate_monthly_stats(scrap_data):
+    """Calculate scrap rate by month"""
+    from datetime import datetime
+
+    monthly_data = {}
+
+    for date_str, records in scrap_data['by_date'].items():
+        try:
+            # Parse date and get year-month
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            year_month = date_obj.strftime('%Y-%m')  # Format: YYYY-MM
+
+            if year_month not in monthly_data:
+                monthly_data[year_month] = {
+                    'total_parts': 0,
+                    'total_ok': 0,
+                    'total_nok': 0
+                }
+
+            # Aggregate parts
+            for record in records:
+                monthly_data[year_month]['total_parts'] += record.get('_total_parts', 0) or 0
+                monthly_data[year_month]['total_ok'] += record.get('_total_ok', 0) or 0
+                monthly_data[year_month]['total_nok'] += record.get('_total_nok', 0) or 0
+        except:
+            continue
+
+    # Calculate scrap rates and format output
+    monthly_summary = []
+    for month, data in sorted(monthly_data.items(), reverse=True):
+        scrap_rate = (data['total_nok'] / data['total_parts'] * 100) if data['total_parts'] > 0 else 0
+        quality_rate = (data['total_ok'] / data['total_parts'] * 100) if data['total_parts'] > 0 else 0
+
+        # Parse month for display
+        try:
+            month_obj = datetime.strptime(month, '%Y-%m')
+            month_label = month_obj.strftime('%B %Y')
+        except:
+            month_label = month
+
+        monthly_summary.append({
+            'month': month,
+            'month_label': month_label,
+            'total_parts': data['total_parts'],
+            'total_ok': data['total_ok'],
+            'total_nok': data['total_nok'],
+            'scrap_rate': round(scrap_rate, 2),
+            'quality_rate': round(quality_rate, 2)
+        })
+
+    return monthly_summary
 
 def calculate_machine_stats(scrap_data):
     """Calculate statistics by machine"""
