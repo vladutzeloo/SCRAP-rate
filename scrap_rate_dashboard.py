@@ -6,6 +6,10 @@ import webbrowser
 import json
 from collections import defaultdict
 import re
+import warnings
+
+# Suppress openpyxl warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 def main():
     """Main function - SCRAP RATE BI Dashboard Generator"""
@@ -50,10 +54,18 @@ def main():
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         output_file = os.path.join(desktop, f"SCRAP_RATE_Dashboard_{timestamp}.html")
 
+        print("\n" + "=" * 70)
+        print("💾 Saving dashboard...")
+
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(html_content)
 
-        print(f"✅ Scrap rate dashboard created: {output_file}")
+        print(f"✅ SUCCESS! Dashboard created!")
+        print("=" * 70)
+        print(f"📁 LOCATION: {output_file}")
+        print(f"📂 FOLDER:   {desktop}")
+        print(f"📄 FILENAME: SCRAP_RATE_Dashboard_{timestamp}.html")
+        print("=" * 70 + "\n")
 
         # Step 5: Success message and open
         show_success(output_file, scrap_data)
@@ -1282,9 +1294,14 @@ def show_success(output_file, scrap_data):
 Perfect for analyzing scrap rate trends and identifying improvement opportunities!
     """
 
+    desktop = os.path.dirname(output_file)
+    filename = os.path.basename(output_file)
+
     result = messagebox.askyesno(
         "Scrap Rate Dashboard Ready!",
         f"🌟 Scrap rate dashboard created with {total_records:,} records!\n\n"
+        f"📁 SAVED TO: {desktop}\n"
+        f"📄 FILE: {filename}\n\n"
         f"✅ Interactive trend analysis\n"
         f"✅ Machine and part number breakdown\n"
         f"✅ Inspector performance analysis\n"
