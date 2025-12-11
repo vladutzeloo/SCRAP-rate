@@ -109,9 +109,13 @@ def extract_scrap_data_from_excel(excel_file):
 
         sheet = wb[sheet_name]
 
-        # Find header row (usually row 1)
+        # Find header row - special handling for "Rebuturi" sheet
+        if "Rebuturi" in sheet_name:
+            header_row = 2  # Headers are in row 2 for this sheet
+        else:
+            header_row = 1
+
         headers = []
-        header_row = 1
         for col in range(1, sheet.max_column + 1):
             cell_value = sheet.cell(header_row, col).value
             if cell_value:
@@ -142,18 +146,39 @@ def extract_scrap_data_from_excel(excel_file):
                 machine_val = extract_field(row_data, ['Machine', 'Masina'])
                 controlor_val = extract_field(row_data, ['Controlor', 'Inspector'])
 
-                # Extract quantity fields
-                qty_checked_dim = extract_number(extract_field(row_data, ['Cantitate verificata dimensional']))
-                qty_checked_viz = extract_number(extract_field(row_data, ['Cantitate verificata vizual (procent)', 'Cantitate verificata vizual']))
-                suspecte = extract_number(extract_field(row_data, ['SUSPECTE', 'Suspecte']))
+                # Extract quantity fields - CORRECTED COLUMN NAMES
+                total_parts = extract_number(extract_field(row_data, ['Total piese\nTotal parts', 'Total piese', 'Total parts']))
+                total_ok = extract_number(extract_field(row_data, ['Total piese OK\nTotal parts OK', 'Total piese OK', 'Total parts OK']))
+                piese_nok = extract_number(extract_field(row_data, ['Piese NOK\n(Scrap/rework)', 'Piese NOK']))
+                scrap_rebut = extract_number(extract_field(row_data, ['SCRAP\nREBUT', 'REBUT\nSCRAP', 'SCRAP', 'REBUT', 'Total piese rebut trimise\nTotal scrap parts sent']))
+                quarantine = extract_number(extract_field(row_data, ['QUARANTINE\nCARANTINA\nSUSPECTE', 'CARANTINA\nQUARANTINE\nSUSPECTE', 'QUARANTINE', 'SUSPECTE', 'Quarantine']))
+                derogation = extract_number(extract_field(row_data, ['DEROGATION\nDEROGARE', 'DEROGARE\nDEROGATION', 'DEROGATION']))
 
                 # Parse date
                 parsed_date = parse_date(date_val)
                 row_data['_parsed_date'] = parsed_date
 
-                # Calculate scrap/suspect rate if we have the data
-                if qty_checked_dim and suspecte is not None:
-                    scrap_rate = (suspecte / qty_checked_dim * 100) if qty_checked_dim > 0 else 0
+                # Store extracted values
+                row_data['_total_parts'] = total_parts
+                row_data['_total_ok'] = total_ok
+                row_data['_piese_nok'] = piese_nok
+                row_data['_scrap_rebut'] = scrap_rebut
+                row_data['_quarantine'] = quarantine
+                row_data['_derogation'] = derogation
+
+                # Calculate total NOK (piese_nok or calculate from total - ok)
+                if piese_nok is not None:
+                    total_nok = piese_nok
+                elif total_parts and total_ok:
+                    total_nok = total_parts - total_ok
+                else:
+                    total_nok = 0
+
+                row_data['_total_nok'] = total_nok
+
+                # Calculate scrap rate based on total NOK
+                if total_parts and total_parts > 0:
+                    scrap_rate = (total_nok / total_parts * 100)
                     row_data['_scrap_rate'] = round(scrap_rate, 2)
                 else:
                     row_data['_scrap_rate'] = None
@@ -257,26 +282,31 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     total_records = len(scrap_data['all_records'])
 
     # Calculate total quantities and scrap
-    total_qty_checked = 0
-    total_suspecte = 0
-    records_with_scrap = []
+    total_parts = 0
+    total_ok = 0
+    total_nok = 0
+    records_with_data = []
 
     for record in scrap_data['all_records']:
-        qty = extract_number(extract_field(record, ['Cantitate verificata dimensional']))
-        suspecte = extract_number(extract_field(record, ['SUSPECTE', 'Suspecte']))
+        parts = record.get('_total_parts', 0)
+        ok = record.get('_total_ok', 0)
+        nok = record.get('_total_nok', 0)
 
-        if qty:
-            total_qty_checked += qty
-        if suspecte is not None:
-            total_suspecte += suspecte
-            if record['_scrap_rate'] is not None:
-                records_with_scrap.append(record)
+        if parts:
+            total_parts += parts
+        if ok:
+            total_ok += ok
+        if nok:
+            total_nok += nok
+
+        if record['_scrap_rate'] is not None:
+            records_with_data.append(record)
 
     # Calculate overall scrap rate
-    overall_scrap_rate = (total_suspecte / total_qty_checked * 100) if total_qty_checked > 0 else 0
+    overall_scrap_rate = (total_nok / total_parts * 100) if total_parts > 0 else 0
 
     # Calculate quality rate (inverse of scrap rate)
-    overall_quality_rate = 100 - overall_scrap_rate
+    overall_quality_rate = (total_ok / total_parts * 100) if total_parts > 0 else 0
 
     # Get date range
     dates = sorted([d for d in scrap_data['by_date'].keys() if d])
@@ -611,7 +641,7 @@ def generate_scrap_dashboard(scrap_data, excel_file):
                 </div>
                 <div class="kpi-value">{overall_scrap_rate:.2f}%</div>
                 <div class="kpi-label">Overall Scrap Rate</div>
-                <div class="kpi-period">{total_suspecte:,.0f} / {total_qty_checked:,.0f} parts</div>
+                <div class="kpi-period">{total_nok:,.0f} NOK / {total_parts:,.0f} total</div>
             </div>
 
             <div class="kpi-card quality">
@@ -620,15 +650,15 @@ def generate_scrap_dashboard(scrap_data, excel_file):
                 </div>
                 <div class="kpi-value">{overall_quality_rate:.2f}%</div>
                 <div class="kpi-label">Quality Rate</div>
-                <div class="kpi-period">{(total_qty_checked - total_suspecte):,.0f} OK parts</div>
+                <div class="kpi-period">{total_ok:,.0f} OK parts</div>
             </div>
 
             <div class="kpi-card volume">
                 <div class="kpi-icon">
                     <i class="fas fa-boxes"></i>
                 </div>
-                <div class="kpi-value">{total_qty_checked:,.0f}</div>
-                <div class="kpi-label">Total Volume Checked</div>
+                <div class="kpi-value">{total_parts:,.0f}</div>
+                <div class="kpi-label">Total Parts Produced</div>
                 <div class="kpi-period">Across {len(scrap_data['by_machine'])} machines</div>
             </div>
         </div>
@@ -905,8 +935,8 @@ def generate_scrap_dashboard(scrap_data, excel_file):
         function createDistributionChart() {{
             const ctx = document.getElementById('distributionChart').getContext('2d');
 
-            const totalOK = {total_qty_checked - total_suspecte};
-            const totalNOK = {total_suspecte};
+            const totalOK = {total_ok};
+            const totalNOK = {total_nok};
 
             new Chart(ctx, {{
                 type: 'doughnut',
@@ -1124,23 +1154,27 @@ def calculate_machine_stats(scrap_data):
     machine_stats = {}
 
     for machine, records in scrap_data['by_machine'].items():
-        total_checked = 0
-        total_suspecte = 0
+        total_parts = 0
+        total_ok = 0
+        total_nok = 0
 
         for record in records:
-            qty = extract_number(extract_field(record, ['Cantitate verificata dimensional']))
-            suspecte = extract_number(extract_field(record, ['SUSPECTE', 'Suspecte']))
+            parts = record.get('_total_parts', 0)
+            ok = record.get('_total_ok', 0)
+            nok = record.get('_total_nok', 0)
 
-            if qty:
-                total_checked += qty
-            if suspecte is not None:
-                total_suspecte += suspecte
+            if parts:
+                total_parts += parts
+            if ok:
+                total_ok += ok
+            if nok:
+                total_nok += nok
 
-        scrap_rate = (total_suspecte / total_checked * 100) if total_checked > 0 else 0
+        scrap_rate = (total_nok / total_parts * 100) if total_parts > 0 else 0
 
         machine_stats[machine] = {
-            'total_checked': total_checked,
-            'total_suspecte': total_suspecte,
+            'total_checked': total_parts,
+            'total_suspecte': total_nok,
             'scrap_rate': round(scrap_rate, 2),
             'record_count': len(records)
         }
@@ -1152,23 +1186,27 @@ def calculate_controlor_stats(scrap_data):
     controlor_stats = {}
 
     for controlor, records in scrap_data['by_controlor'].items():
-        total_checked = 0
-        total_suspecte = 0
+        total_parts = 0
+        total_ok = 0
+        total_nok = 0
 
         for record in records:
-            qty = extract_number(extract_field(record, ['Cantitate verificata dimensional']))
-            suspecte = extract_number(extract_field(record, ['SUSPECTE', 'Suspecte']))
+            parts = record.get('_total_parts', 0)
+            ok = record.get('_total_ok', 0)
+            nok = record.get('_total_nok', 0)
 
-            if qty:
-                total_checked += qty
-            if suspecte is not None:
-                total_suspecte += suspecte
+            if parts:
+                total_parts += parts
+            if ok:
+                total_ok += ok
+            if nok:
+                total_nok += nok
 
-        scrap_rate = (total_suspecte / total_checked * 100) if total_checked > 0 else 0
+        scrap_rate = (total_nok / total_parts * 100) if total_parts > 0 else 0
 
         controlor_stats[controlor] = {
-            'total_checked': total_checked,
-            'total_suspecte': total_suspecte,
+            'total_checked': total_parts,
+            'total_suspecte': total_nok,
             'scrap_rate': round(scrap_rate, 2),
             'record_count': len(records)
         }
@@ -1180,23 +1218,27 @@ def calculate_part_stats(scrap_data):
     part_stats = {}
 
     for part, records in scrap_data['by_part_number'].items():
-        total_checked = 0
-        total_suspecte = 0
+        total_parts = 0
+        total_ok = 0
+        total_nok = 0
 
         for record in records:
-            qty = extract_number(extract_field(record, ['Cantitate verificata dimensional']))
-            suspecte = extract_number(extract_field(record, ['SUSPECTE', 'Suspecte']))
+            parts = record.get('_total_parts', 0)
+            ok = record.get('_total_ok', 0)
+            nok = record.get('_total_nok', 0)
 
-            if qty:
-                total_checked += qty
-            if suspecte is not None:
-                total_suspecte += suspecte
+            if parts:
+                total_parts += parts
+            if ok:
+                total_ok += ok
+            if nok:
+                total_nok += nok
 
-        scrap_rate = (total_suspecte / total_checked * 100) if total_checked > 0 else 0
+        scrap_rate = (total_nok / total_parts * 100) if total_parts > 0 else 0
 
         part_stats[part] = {
-            'total_checked': total_checked,
-            'total_suspecte': total_suspecte,
+            'total_checked': total_parts,
+            'total_suspecte': total_nok,
             'scrap_rate': round(scrap_rate, 2),
             'record_count': len(records)
         }
@@ -1216,23 +1258,27 @@ def calculate_trend_data(scrap_data):
 
     for date in sorted_dates:
         records = scrap_data['by_date'][date]
-        total_checked = 0
-        total_suspecte = 0
+        total_parts = 0
+        total_ok = 0
+        total_nok = 0
 
         for record in records:
-            qty = extract_number(extract_field(record, ['Cantitate verificata dimensional']))
-            suspecte = extract_number(extract_field(record, ['SUSPECTE', 'Suspecte']))
+            parts = record.get('_total_parts', 0)
+            ok = record.get('_total_ok', 0)
+            nok = record.get('_total_nok', 0)
 
-            if qty:
-                total_checked += qty
-            if suspecte is not None:
-                total_suspecte += suspecte
+            if parts:
+                total_parts += parts
+            if ok:
+                total_ok += ok
+            if nok:
+                total_nok += nok
 
-        if total_checked > 0:
-            scrap_rate = (total_suspecte / total_checked * 100)
+        if total_parts > 0:
+            scrap_rate = (total_nok / total_parts * 100)
             trend['labels'].append(date)
             trend['scrap_rates'].append(round(scrap_rate, 2))
-            trend['volumes'].append(total_checked)
+            trend['volumes'].append(total_parts)
 
     return trend
 
@@ -1247,12 +1293,12 @@ def calculate_category_breakdown(scrap_data):
 
     for record in scrap_data['all_records']:
         sheet = record.get('_sheet', 'Unknown')
-        suspecte = extract_number(extract_field(record, ['SUSPECTE', 'Suspecte']))
+        nok = record.get('_total_nok', 0)
 
-        if suspecte is not None:
+        if nok:
             if sheet not in sheet_stats:
                 sheet_stats[sheet] = 0
-            sheet_stats[sheet] += suspecte
+            sheet_stats[sheet] += nok
 
     # Sort by value
     sorted_sheets = sorted(sheet_stats.items(), key=lambda x: x[1], reverse=True)
