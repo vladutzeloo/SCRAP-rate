@@ -337,8 +337,8 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     # Prepare all raw data for JavaScript filtering
     all_records_json = json.dumps([{
         'date': r.get('_parsed_date'),
-        'machine': extract_field(r, ['Machine', 'Masina']) or 'Unknown',
-        'sheet': r.get('_sheet', 'Unknown'),
+        'machine': str(extract_field(r, ['Machine', 'Masina'])) if extract_field(r, ['Machine', 'Masina']) is not None else 'Unknown',
+        'sheet': str(r.get('_sheet', 'Unknown')),
         'total_parts': r.get('_total_parts', 0) or 0,
         'total_ok': r.get('_total_ok', 0) or 0,
         'total_nok': r.get('_total_nok', 0) or 0,
@@ -346,8 +346,8 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     } for r in scrap_data['all_records'] if r.get('_parsed_date')])
 
     # Get unique machines and sheets for filter options
-    unique_machines = sorted(list(set([extract_field(r, ['Machine', 'Masina']) for r in scrap_data['all_records'] if extract_field(r, ['Machine', 'Masina'])])))
-    unique_sheets = sorted(list(set([r.get('_sheet') for r in scrap_data['all_records'] if r.get('_sheet') and r.get('_sheet') != 'Drop Down List'])))
+    unique_machines = sorted(list(set([str(extract_field(r, ['Machine', 'Masina'])) for r in scrap_data['all_records'] if extract_field(r, ['Machine', 'Masina']) is not None])))
+    unique_sheets = sorted(list(set([str(r.get('_sheet')) for r in scrap_data['all_records'] if r.get('_sheet') and r.get('_sheet') != 'Drop Down List'])))
 
     # Prepare data for charts
     trend_json = json.dumps(trend_data)
