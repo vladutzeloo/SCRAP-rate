@@ -316,6 +316,9 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     weekly_stats = calculate_weekly_stats(scrap_data)
     monthly_stats = calculate_monthly_stats(scrap_data)
 
+    # Calculate daily scrap rate for last 14 days
+    daily_stats = calculate_daily_stats(scrap_data, days=14)
+
     # Calculate statistics by machine
     machine_stats = calculate_machine_stats(scrap_data)
 
@@ -331,6 +334,21 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     # Calculate scrap category breakdown (by sheet)
     category_data = calculate_category_breakdown(scrap_data)
 
+    # Prepare all raw data for JavaScript filtering
+    all_records_json = json.dumps([{
+        'date': r.get('_parsed_date'),
+        'machine': extract_field(r, ['Machine', 'Masina']) or 'Unknown',
+        'sheet': r.get('_sheet', 'Unknown'),
+        'total_parts': r.get('_total_parts', 0) or 0,
+        'total_ok': r.get('_total_ok', 0) or 0,
+        'total_nok': r.get('_total_nok', 0) or 0,
+        'scrap_rate': r.get('_scrap_rate', 0) or 0
+    } for r in scrap_data['all_records'] if r.get('_parsed_date')])
+
+    # Get unique machines and sheets for filter options
+    unique_machines = sorted(list(set([extract_field(r, ['Machine', 'Masina']) for r in scrap_data['all_records'] if extract_field(r, ['Machine', 'Masina'])])))
+    unique_sheets = sorted(list(set([r.get('_sheet') for r in scrap_data['all_records'] if r.get('_sheet') and r.get('_sheet') != 'Drop Down List'])))
+
     # Prepare data for charts
     trend_json = json.dumps(trend_data)
     machine_stats_json = json.dumps(machine_stats)
@@ -339,6 +357,9 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     category_json = json.dumps(category_data)
     weekly_stats_json = json.dumps(weekly_stats)
     monthly_stats_json = json.dumps(monthly_stats)
+    daily_stats_json = json.dumps(daily_stats)
+    unique_machines_json = json.dumps(unique_machines)
+    unique_sheets_json = json.dumps(unique_sheets)
 
     # Current date and time
     current_datetime = datetime.now().strftime("%B %d, %Y at %I:%M %p")
@@ -352,6 +373,7 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     <title>SCRAP RATE BI Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
     <style>
         * {{
             margin: 0;
@@ -483,6 +505,166 @@ def generate_scrap_dashboard(scrap_data, excel_file):
             font-size: 0.85rem;
             margin-top: 5px;
             font-style: italic;
+        }}
+
+        /* Filter Section */
+        .filter-section {{
+            padding: 30px 40px;
+            background: #f8f9fa;
+            border-top: 1px solid #e9ecef;
+        }}
+
+        .filter-container {{
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            border-left: 4px solid #dc2626;
+        }}
+
+        .filter-title {{
+            font-size: 1.3rem;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+
+        .filters-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }}
+
+        .filter-group {{
+            display: flex;
+            flex-direction: column;
+        }}
+
+        .filter-label {{
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+
+        .filter-input {{
+            background: #ffffff;
+            border: 2px solid #dc2626;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 14px;
+            color: #2c3e50;
+            transition: all 0.3s ease;
+        }}
+
+        .filter-input:focus {{
+            outline: none;
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+        }}
+
+        .filter-select {{
+            background: #ffffff;
+            border: 2px solid #dc2626;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 14px;
+            color: #2c3e50;
+            transition: all 0.3s ease;
+        }}
+
+        .filter-select:focus {{
+            outline: none;
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+        }}
+
+        .filter-checkboxes {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }}
+
+        .filter-checkbox-label {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #f8f9fa;
+            border: 2px solid #dc2626;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.85rem;
+        }}
+
+        .filter-checkbox-label:hover {{
+            background: rgba(220, 38, 38, 0.1);
+        }}
+
+        .filter-checkbox-label input {{
+            cursor: pointer;
+        }}
+
+        .filter-buttons {{
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }}
+
+        .filter-btn {{
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+
+        .filter-btn-apply {{
+            background: #dc2626;
+            color: white;
+        }}
+
+        .filter-btn-apply:hover {{
+            background: #b91c1c;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+        }}
+
+        .filter-btn-reset {{
+            background: #6b7280;
+            color: white;
+        }}
+
+        .filter-btn-reset:hover {{
+            background: #4b5563;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(107, 114, 128, 0.3);
+        }}
+
+        .filter-status {{
+            margin-top: 15px;
+            padding: 10px 15px;
+            background: rgba(220, 38, 38, 0.1);
+            border-left: 4px solid #dc2626;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            color: #2c3e50;
+            display: none;
+        }}
+
+        .filter-status.active {{
+            display: block;
         }}
 
         /* Analytics Section */
@@ -669,6 +851,60 @@ def generate_scrap_dashboard(scrap_data, excel_file):
             </div>
         </div>
 
+        <!-- Filter Section -->
+        <div class="filter-section">
+            <div class="filter-container">
+                <h2 class="filter-title">
+                    <i class="fas fa-filter"></i>
+                    Filter Data
+                </h2>
+
+                <div class="filters-grid">
+                    <!-- Date Range Filter -->
+                    <div class="filter-group">
+                        <label class="filter-label">From Date</label>
+                        <input type="date" id="filterDateFrom" class="filter-input">
+                    </div>
+
+                    <div class="filter-group">
+                        <label class="filter-label">To Date</label>
+                        <input type="date" id="filterDateTo" class="filter-input">
+                    </div>
+
+                    <!-- Machine Filter -->
+                    <div class="filter-group">
+                        <label class="filter-label">Machine</label>
+                        <select id="filterMachine" class="filter-select" multiple size="3">
+                            <option value="all" selected>All Machines</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Category/Sheet Filter -->
+                <div class="filter-group">
+                    <label class="filter-label">Categories (Sheets)</label>
+                    <div class="filter-checkboxes" id="filterCategories">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Filter Buttons -->
+                <div class="filter-buttons">
+                    <button class="filter-btn filter-btn-apply" onclick="applyFilters()">
+                        <i class="fas fa-check"></i> Apply Filters
+                    </button>
+                    <button class="filter-btn filter-btn-reset" onclick="resetFilters()">
+                        <i class="fas fa-undo"></i> Reset All
+                    </button>
+                </div>
+
+                <!-- Filter Status -->
+                <div class="filter-status" id="filterStatus">
+                    <!-- Shows active filter summary -->
+                </div>
+            </div>
+        </div>
+
         <!-- Analytics Section -->
         <div class="analytics-section">
             <h2 class="section-title">Scrap Rate Trends & Analysis</h2>
@@ -676,9 +912,19 @@ def generate_scrap_dashboard(scrap_data, excel_file):
             <!-- Charts Grid -->
             <div class="charts-full">
                 <div class="chart-container">
-                    <h3 class="chart-title">Scrap Rate Over Time</h3>
+                    <h3 class="chart-title">📊 Weekly Scrap Rate Trend (Easier to Read)</h3>
                     <div class="chart-wrapper">
-                        <canvas id="trendChart"></canvas>
+                        <canvas id="weeklyTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Daily Scrap Rate Section -->
+            <div class="charts-full">
+                <div class="chart-container">
+                    <h3 class="chart-title">📅 Daily Scrap Rate - Last 14 Days</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="dailyTrendChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -810,6 +1056,9 @@ def generate_scrap_dashboard(scrap_data, excel_file):
 
     <script>
         // Data from Python
+        const allRecordsData = {all_records_json};
+        const uniqueMachines = {unique_machines_json};
+        const uniqueSheets = {unique_sheets_json};
         const trendData = {trend_json};
         const machineStats = {machine_stats_json};
         const controlorStats = {controlor_stats_json};
@@ -817,6 +1066,10 @@ def generate_scrap_dashboard(scrap_data, excel_file):
         const categoryData = {category_json};
         const weeklyStats = {weekly_stats_json};
         const monthlyStats = {monthly_stats_json};
+        const dailyStats = {daily_stats_json};
+
+        // Global variables for filtered data
+        let filteredRecords = allRecordsData;
 
         // Chart colors (red theme)
         const chartColors = {{
@@ -828,9 +1081,11 @@ def generate_scrap_dashboard(scrap_data, excel_file):
             info: '#3b82f6'
         }};
 
-        // Initialize charts on page load
+        // Initialize charts and filters on page load
         document.addEventListener('DOMContentLoaded', function() {{
-            createTrendChart();
+            initializeFilters();
+            createWeeklyTrendChart();
+            createDailyTrendChart();
             createMachineChart();
             createDistributionChart();
             createCategoryChart();
@@ -839,26 +1094,303 @@ def generate_scrap_dashboard(scrap_data, excel_file):
             populateTables();
         }});
 
-        function createTrendChart() {{
-            const ctx = document.getElementById('trendChart').getContext('2d');
+        function initializeFilters() {{
+            // Populate machine filter
+            const machineSelect = document.getElementById('filterMachine');
+            uniqueMachines.forEach(machine => {{
+                const option = document.createElement('option');
+                option.value = machine;
+                option.textContent = machine;
+                machineSelect.appendChild(option);
+            }});
+
+            // Populate category checkboxes
+            const categoryContainer = document.getElementById('filterCategories');
+            uniqueSheets.forEach(sheet => {{
+                const label = document.createElement('label');
+                label.className = 'filter-checkbox-label';
+                label.innerHTML = `
+                    <input type="checkbox" value="${{sheet}}" checked>
+                    ${{sheet}}
+                `;
+                categoryContainer.appendChild(label);
+            }});
+
+            // Set default date range (all dates)
+            if (allRecordsData.length > 0) {{
+                const dates = allRecordsData.map(r => r.date).filter(d => d).sort();
+                if (dates.length > 0) {{
+                    document.getElementById('filterDateFrom').value = dates[0];
+                    document.getElementById('filterDateTo').value = dates[dates.length - 1];
+                }}
+            }}
+        }}
+
+        function applyFilters() {{
+            const dateFrom = document.getElementById('filterDateFrom').value;
+            const dateTo = document.getElementById('filterDateTo').value;
+            const selectedMachines = Array.from(document.getElementById('filterMachine').selectedOptions).map(o => o.value);
+            const selectedCategories = Array.from(document.querySelectorAll('#filterCategories input:checked')).map(cb => cb.value);
+
+            // Filter records
+            filteredRecords = allRecordsData.filter(record => {{
+                // Date filter
+                if (dateFrom && record.date < dateFrom) return false;
+                if (dateTo && record.date > dateTo) return false;
+
+                // Machine filter
+                if (!selectedMachines.includes('all') && selectedMachines.length > 0) {{
+                    if (!selectedMachines.includes(record.machine)) return false;
+                }}
+
+                // Category filter
+                if (!selectedCategories.includes(record.sheet)) return false;
+
+                return true;
+            }});
+
+            // Update filter status
+            updateFilterStatus(dateFrom, dateTo, selectedMachines, selectedCategories);
+
+            // Refresh all visualizations
+            refreshDashboard();
+        }}
+
+        function resetFilters() {{
+            // Reset inputs
+            if (allRecordsData.length > 0) {{
+                const dates = allRecordsData.map(r => r.date).filter(d => d).sort();
+                if (dates.length > 0) {{
+                    document.getElementById('filterDateFrom').value = dates[0];
+                    document.getElementById('filterDateTo').value = dates[dates.length - 1];
+                }}
+            }}
+
+            // Reset machine select
+            const machineSelect = document.getElementById('filterMachine');
+            machineSelect.selectedIndex = 0;
+
+            // Reset category checkboxes
+            document.querySelectorAll('#filterCategories input').forEach(cb => cb.checked = true);
+
+            // Reset filtered data
+            filteredRecords = allRecordsData;
+
+            // Hide filter status
+            document.getElementById('filterStatus').classList.remove('active');
+
+            // Refresh dashboard
+            refreshDashboard();
+        }}
+
+        function updateFilterStatus(dateFrom, dateTo, machines, categories) {{
+            const statusDiv = document.getElementById('filterStatus');
+            const totalRecords = allRecordsData.length;
+            const filteredCount = filteredRecords.length;
+            const percentage = ((filteredCount / totalRecords) * 100).toFixed(1);
+
+            let statusText = `<strong>Filters Active:</strong> Showing ${{filteredCount.toLocaleString()}} of ${{totalRecords.toLocaleString()}} records (${{percentage}}%)<br>`;
+
+            if (dateFrom || dateTo) {{
+                statusText += `<i class="fas fa-calendar"></i> Dates: ${{dateFrom || 'any'}} to ${{dateTo || 'any'}}<br>`;
+            }}
+
+            if (!machines.includes('all') && machines.length > 0) {{
+                statusText += `<i class="fas fa-cogs"></i> Machines: ${{machines.length}} selected<br>`;
+            }}
+
+            if (categories.length < uniqueSheets.length) {{
+                statusText += `<i class="fas fa-folder"></i> Categories: ${{categories.length}} of ${{uniqueSheets.length}} selected`;
+            }}
+
+            statusDiv.innerHTML = statusText;
+            statusDiv.classList.add('active');
+        }}
+
+        function refreshDashboard() {{
+            // Recalculate all stats from filtered data
+            const newWeeklyStats = calculateWeeklyStatsFromFiltered();
+            const newMonthlyStats = calculateMonthlyStatsFromFiltered();
+            const newDailyStats = calculateDailyStatsFromFiltered();
+
+            // Clear existing charts
+            document.getElementById('weeklyTrendChart').remove();
+            document.getElementById('dailyTrendChart').remove();
+
+            // Recreate canvas elements
+            const weeklyContainer = document.querySelector('.chart-wrapper');
+            const dailyContainer = document.querySelectorAll('.chart-wrapper')[1];
+
+            const weeklyCanvas = document.createElement('canvas');
+            weeklyCanvas.id = 'weeklyTrendChart';
+            weeklyContainer.appendChild(weeklyCanvas);
+
+            const dailyCanvas = document.createElement('canvas');
+            dailyCanvas.id = 'dailyTrendChart';
+            dailyContainer.appendChild(dailyCanvas);
+
+            // Recreate charts with filtered data
+            createWeeklyTrendChartFiltered(newWeeklyStats);
+            createDailyTrendChartFiltered(newDailyStats);
+
+            // Update tables
+            populateWeeklyMonthlyTablesFiltered(newWeeklyStats, newMonthlyStats);
+        }}
+
+        function calculateWeeklyStatsFromFiltered() {{
+            const weeklyData = {{}};
+
+            filteredRecords.forEach(record => {{
+                const date = new Date(record.date);
+                const yearWeek = date.getFullYear() + '-W' + String(Math.ceil((date - new Date(date.getFullYear(), 0, 1)) / 604800000)).padStart(2, '0');
+
+                if (!weeklyData[yearWeek]) {{
+                    weeklyData[yearWeek] = {{
+                        total_parts: 0,
+                        total_ok: 0,
+                        total_nok: 0,
+                        start_date: date,
+                        end_date: date
+                    }};
+                }}
+
+                weeklyData[yearWeek].total_parts += record.total_parts;
+                weeklyData[yearWeek].total_ok += record.total_ok;
+                weeklyData[yearWeek].total_nok += record.total_nok;
+
+                if (date < weeklyData[yearWeek].start_date) weeklyData[yearWeek].start_date = date;
+                if (date > weeklyData[yearWeek].end_date) weeklyData[yearWeek].end_date = date;
+            }});
+
+            const result = [];
+            Object.entries(weeklyData).sort((a, b) => b[0].localeCompare(a[0])).forEach(([week, data]) => {{
+                const scrap_rate = data.total_parts > 0 ? (data.total_nok / data.total_parts * 100) : 0;
+                const quality_rate = data.total_parts > 0 ? (data.total_ok / data.total_parts * 100) : 0;
+                const weekNum = week.split('-W')[1];
+                const monthDay = (d) => d.toLocaleDateString('en-US', {{ month: 'short', day: 'numeric' }});
+
+                result.push({{
+                    week: week,
+                    week_label: `Week ${{weekNum}} (${{monthDay(data.start_date)}} - ${{monthDay(data.end_date)}})`,
+                    total_parts: data.total_parts,
+                    total_ok: data.total_ok,
+                    total_nok: data.total_nok,
+                    scrap_rate: Math.round(scrap_rate * 100) / 100,
+                    quality_rate: Math.round(quality_rate * 100) / 100
+                }});
+            }});
+
+            return result;
+        }}
+
+        function calculateMonthlyStatsFromFiltered() {{
+            const monthlyData = {{}};
+
+            filteredRecords.forEach(record => {{
+                const date = new Date(record.date);
+                const yearMonth = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+
+                if (!monthlyData[yearMonth]) {{
+                    monthlyData[yearMonth] = {{
+                        total_parts: 0,
+                        total_ok: 0,
+                        total_nok: 0
+                    }};
+                }}
+
+                monthlyData[yearMonth].total_parts += record.total_parts;
+                monthlyData[yearMonth].total_ok += record.total_ok;
+                monthlyData[yearMonth].total_nok += record.total_nok;
+            }});
+
+            const result = [];
+            Object.entries(monthlyData).sort((a, b) => b[0].localeCompare(a[0])).forEach(([month, data]) => {{
+                const scrap_rate = data.total_parts > 0 ? (data.total_nok / data.total_parts * 100) : 0;
+                const quality_rate = data.total_parts > 0 ? (data.total_ok / data.total_parts * 100) : 0;
+                const date = new Date(month + '-01');
+                const month_label = date.toLocaleDateString('en-US', {{ month: 'long', year: 'numeric' }});
+
+                result.push({{
+                    month: month,
+                    month_label: month_label,
+                    total_parts: data.total_parts,
+                    total_ok: data.total_ok,
+                    total_nok: data.total_nok,
+                    scrap_rate: Math.round(scrap_rate * 100) / 100,
+                    quality_rate: Math.round(quality_rate * 100) / 100
+                }});
+            }});
+
+            return result;
+        }}
+
+        function calculateDailyStatsFromFiltered() {{
+            const dailyData = {{}};
+
+            filteredRecords.forEach(record => {{
+                const date = record.date;
+
+                if (!dailyData[date]) {{
+                    dailyData[date] = {{
+                        total_parts: 0,
+                        total_ok: 0,
+                        total_nok: 0
+                    }};
+                }}
+
+                dailyData[date].total_parts += record.total_parts;
+                dailyData[date].total_ok += record.total_ok;
+                dailyData[date].total_nok += record.total_nok;
+            }});
+
+            const result = [];
+            const sortedDates = Object.keys(dailyData).sort().slice(-14); // Last 14 days
+
+            sortedDates.forEach(date => {{
+                const data = dailyData[date];
+                const scrap_rate = data.total_parts > 0 ? (data.total_nok / data.total_parts * 100) : 0;
+                const quality_rate = data.total_parts > 0 ? (data.total_ok / data.total_parts * 100) : 0;
+                const dateObj = new Date(date);
+                const date_label = dateObj.toLocaleDateString('en-US', {{ month: 'short', day: 'numeric' }});
+
+                result.push({{
+                    date: date,
+                    date_label: date_label,
+                    total_parts: data.total_parts,
+                    total_ok: data.total_ok,
+                    total_nok: data.total_nok,
+                    scrap_rate: Math.round(scrap_rate * 100) / 100,
+                    quality_rate: Math.round(quality_rate * 100) / 100
+                }});
+            }});
+
+            return result;
+        }}
+
+        function createWeeklyTrendChartFiltered(stats) {{
+            const ctx = document.getElementById('weeklyTrendChart').getContext('2d');
+            const weeklyLabels = stats.map(w => w.week_label);
+            const weeklyRates = stats.map(w => w.scrap_rate);
+            weeklyLabels.reverse();
+            weeklyRates.reverse();
 
             new Chart(ctx, {{
                 type: 'line',
                 data: {{
-                    labels: trendData.labels,
+                    labels: weeklyLabels,
                     datasets: [{{
-                        label: 'Scrap Rate (%)',
-                        data: trendData.scrap_rates,
+                        label: 'Weekly Scrap Rate (%)',
+                        data: weeklyRates,
                         borderColor: chartColors.danger,
                         backgroundColor: 'rgba(220, 38, 38, 0.1)',
-                        borderWidth: 3,
+                        borderWidth: 4,
                         fill: true,
-                        tension: 0.4,
-                        pointRadius: 5,
-                        pointHoverRadius: 7,
+                        tension: 0.3,
+                        pointRadius: 8,
+                        pointHoverRadius: 10,
                         pointBackgroundColor: chartColors.danger,
                         pointBorderColor: '#ffffff',
-                        pointBorderWidth: 2
+                        pointBorderWidth: 3
                     }}]
                 }},
                 options: {{
@@ -870,9 +1402,237 @@ def generate_scrap_dashboard(scrap_data, excel_file):
                             position: 'top',
                             labels: {{
                                 font: {{
-                                    size: 13,
+                                    size: 14,
                                     weight: '600'
                                 }}
+                            }}
+                        }},
+                        datalabels: {{
+                            display: true,
+                            align: 'top',
+                            backgroundColor: 'rgba(220, 38, 38, 0.95)',
+                            color: '#ffffff',
+                            borderRadius: 4,
+                            padding: {{
+                                top: 4,
+                                bottom: 4,
+                                left: 8,
+                                right: 8
+                            }},
+                            font: {{
+                                size: 12,
+                                weight: 'bold'
+                            }},
+                            formatter: function(value) {{
+                                return value.toFixed(2) + '%';
+                            }}
+                        }}
+                    }},
+                    scales: {{
+                        x: {{
+                            grid: {{
+                                color: 'rgba(149, 165, 166, 0.2)'
+                            }},
+                            ticks: {{
+                                font: {{
+                                    size: 11
+                                }}
+                            }}
+                        }},
+                        y: {{
+                            beginAtZero: true,
+                            ticks: {{
+                                callback: function(value) {{
+                                    return value + '%';
+                                }},
+                                font: {{
+                                    size: 12
+                                }}
+                            }},
+                            grid: {{
+                                color: 'rgba(149, 165, 166, 0.2)'
+                            }}
+                        }}
+                    }}
+                }}
+            }});
+        }}
+
+        function createDailyTrendChartFiltered(stats) {{
+            const ctx = document.getElementById('dailyTrendChart').getContext('2d');
+            const dailyLabels = stats.map(d => d.date_label);
+            const dailyRates = stats.map(d => d.scrap_rate);
+
+            new Chart(ctx, {{
+                type: 'bar',
+                data: {{
+                    labels: dailyLabels,
+                    datasets: [{{
+                        label: 'Daily Scrap Rate (%)',
+                        data: dailyRates,
+                        backgroundColor: dailyRates.map(rate =>
+                            rate > 5 ? 'rgba(220, 38, 38, 0.8)' :
+                            rate > 2 ? 'rgba(245, 158, 11, 0.8)' :
+                            'rgba(34, 197, 94, 0.8)'
+                        ),
+                        borderColor: dailyRates.map(rate =>
+                            rate > 5 ? chartColors.danger :
+                            rate > 2 ? chartColors.warning :
+                            chartColors.success
+                        ),
+                        borderWidth: 2,
+                        borderRadius: 6
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{
+                            display: false
+                        }},
+                        datalabels: {{
+                            display: true,
+                            anchor: 'end',
+                            align: 'top',
+                            color: '#2c3e50',
+                            font: {{
+                                size: 11,
+                                weight: 'bold'
+                            }},
+                            formatter: function(value) {{
+                                return value.toFixed(2) + '%';
+                            }}
+                        }}
+                    }},
+                    scales: {{
+                        x: {{
+                            grid: {{
+                                display: false
+                            }},
+                            ticks: {{
+                                font: {{
+                                    size: 10
+                                }}
+                            }}
+                        }},
+                        y: {{
+                            beginAtZero: true,
+                            ticks: {{
+                                callback: function(value) {{
+                                    return value + '%';
+                                }},
+                                font: {{
+                                    size: 11
+                                }}
+                            }},
+                            grid: {{
+                                color: 'rgba(149, 165, 166, 0.2)'
+                            }}
+                        }}
+                    }}
+                }}
+            }});
+        }}
+
+        function populateWeeklyMonthlyTablesFiltered(weeklyStats, monthlyStats) {{
+            // Clear and repopulate weekly table
+            const weeklyTableBody = document.getElementById('weeklyTableBody');
+            weeklyTableBody.innerHTML = '';
+            weeklyStats.forEach((week) => {{
+                const row = document.createElement('tr');
+                const scrapClass = week.scrap_rate > 5 ? 'scrap-rate-high' :
+                                  week.scrap_rate > 2 ? 'scrap-rate-medium' : 'scrap-rate-low';
+                row.innerHTML = `
+                    <td>${{week.week_label}}</td>
+                    <td>${{week.total_parts.toLocaleString()}}</td>
+                    <td>${{week.total_nok.toLocaleString()}}</td>
+                    <td><span class="${{scrapClass}}">${{week.scrap_rate.toFixed(2)}}%</span></td>
+                    <td><span class="quality-rate">${{week.quality_rate.toFixed(2)}}%</span></td>
+                `;
+                weeklyTableBody.appendChild(row);
+            }});
+
+            // Clear and repopulate monthly table
+            const monthlyTableBody = document.getElementById('monthlyTableBody');
+            monthlyTableBody.innerHTML = '';
+            monthlyStats.forEach((month) => {{
+                const row = document.createElement('tr');
+                const scrapClass = month.scrap_rate > 5 ? 'scrap-rate-high' :
+                                  month.scrap_rate > 2 ? 'scrap-rate-medium' : 'scrap-rate-low';
+                row.innerHTML = `
+                    <td>${{month.month_label}}</td>
+                    <td>${{month.total_parts.toLocaleString()}}</td>
+                    <td>${{month.total_nok.toLocaleString()}}</td>
+                    <td><span class="${{scrapClass}}">${{month.scrap_rate.toFixed(2)}}%</span></td>
+                    <td><span class="quality-rate">${{month.quality_rate.toFixed(2)}}%</span></td>
+                `;
+                monthlyTableBody.appendChild(row);
+            }});
+        }}
+
+        function createWeeklyTrendChart() {{
+            const ctx = document.getElementById('weeklyTrendChart').getContext('2d');
+
+            // Prepare weekly data for chart
+            const weeklyLabels = weeklyStats.map(w => w.week_label);
+            const weeklyRates = weeklyStats.map(w => w.scrap_rate);
+
+            // Reverse to show oldest to newest
+            weeklyLabels.reverse();
+            weeklyRates.reverse();
+
+            new Chart(ctx, {{
+                type: 'line',
+                data: {{
+                    labels: weeklyLabels,
+                    datasets: [{{
+                        label: 'Weekly Scrap Rate (%)',
+                        data: weeklyRates,
+                        borderColor: chartColors.danger,
+                        backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                        borderWidth: 4,
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 8,
+                        pointHoverRadius: 10,
+                        pointBackgroundColor: chartColors.danger,
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 3
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{
+                            display: true,
+                            position: 'top',
+                            labels: {{
+                                font: {{
+                                    size: 14,
+                                    weight: '600'
+                                }}
+                            }}
+                        }},
+                        datalabels: {{
+                            display: true,
+                            align: 'top',
+                            backgroundColor: 'rgba(220, 38, 38, 0.95)',
+                            color: '#ffffff',
+                            borderRadius: 4,
+                            padding: {{
+                                top: 4,
+                                bottom: 4,
+                                left: 8,
+                                right: 8
+                            }},
+                            font: {{
+                                size: 12,
+                                weight: 'bold'
+                            }},
+                            formatter: function(value) {{
+                                return value.toFixed(2) + '%';
                             }}
                         }},
                         tooltip: {{
@@ -894,6 +1654,11 @@ def generate_scrap_dashboard(scrap_data, excel_file):
                         x: {{
                             grid: {{
                                 color: 'rgba(149, 165, 166, 0.2)'
+                            }},
+                            ticks: {{
+                                font: {{
+                                    size: 11
+                                }}
                             }}
                         }},
                         y: {{
@@ -901,6 +1666,108 @@ def generate_scrap_dashboard(scrap_data, excel_file):
                             ticks: {{
                                 callback: function(value) {{
                                     return value + '%';
+                                }},
+                                font: {{
+                                    size: 12
+                                }}
+                            }},
+                            grid: {{
+                                color: 'rgba(149, 165, 166, 0.2)'
+                            }}
+                        }}
+                    }}
+                }}
+            }});
+        }}
+
+        function createDailyTrendChart() {{
+            const ctx = document.getElementById('dailyTrendChart').getContext('2d');
+
+            // Prepare daily data for chart (last 14 days)
+            const dailyLabels = dailyStats.map(d => d.date_label);
+            const dailyRates = dailyStats.map(d => d.scrap_rate);
+
+            new Chart(ctx, {{
+                type: 'bar',
+                data: {{
+                    labels: dailyLabels,
+                    datasets: [{{
+                        label: 'Daily Scrap Rate (%)',
+                        data: dailyRates,
+                        backgroundColor: dailyRates.map(rate =>
+                            rate > 5 ? 'rgba(220, 38, 38, 0.8)' :
+                            rate > 2 ? 'rgba(245, 158, 11, 0.8)' :
+                            'rgba(34, 197, 94, 0.8)'
+                        ),
+                        borderColor: dailyRates.map(rate =>
+                            rate > 5 ? chartColors.danger :
+                            rate > 2 ? chartColors.warning :
+                            chartColors.success
+                        ),
+                        borderWidth: 2,
+                        borderRadius: 6
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{
+                            display: false
+                        }},
+                        datalabels: {{
+                            display: true,
+                            anchor: 'end',
+                            align: 'top',
+                            color: '#2c3e50',
+                            font: {{
+                                size: 11,
+                                weight: 'bold'
+                            }},
+                            formatter: function(value) {{
+                                return value.toFixed(2) + '%';
+                            }}
+                        }},
+                        tooltip: {{
+                            backgroundColor: 'rgba(44, 62, 80, 0.9)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            borderColor: chartColors.primary,
+                            borderWidth: 1,
+                            cornerRadius: 6,
+                            padding: 12,
+                            callbacks: {{
+                                label: function(context) {{
+                                    const index = context.dataIndex;
+                                    const day = dailyStats[index];
+                                    return [
+                                        'Scrap Rate: ' + day.scrap_rate.toFixed(2) + '%',
+                                        'Parts: ' + day.total_parts.toLocaleString(),
+                                        'NOK: ' + day.total_nok.toLocaleString()
+                                    ];
+                                }}
+                            }}
+                        }}
+                    }},
+                    scales: {{
+                        x: {{
+                            grid: {{
+                                display: false
+                            }},
+                            ticks: {{
+                                font: {{
+                                    size: 10
+                                }}
+                            }}
+                        }},
+                        y: {{
+                            beginAtZero: true,
+                            ticks: {{
+                                callback: function(value) {{
+                                    return value + '%';
+                                }},
+                                font: {{
+                                    size: 11
                                 }}
                             }},
                             grid: {{
@@ -1341,6 +2208,63 @@ def calculate_monthly_stats(scrap_data):
         })
 
     return monthly_summary
+
+def calculate_daily_stats(scrap_data, days=14):
+    """Calculate daily scrap rate for last N days"""
+    from datetime import datetime, timedelta
+
+    # Get the latest date in data
+    sorted_dates = sorted(scrap_data['by_date'].keys(), reverse=True)
+    if not sorted_dates:
+        return []
+
+    try:
+        latest_date = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
+    except:
+        return []
+
+    # Calculate cutoff date
+    cutoff_date = latest_date - timedelta(days=days-1)
+
+    daily_summary = []
+
+    for date_str in sorted_dates[:days]:  # Get last N days
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+
+            if date_obj < cutoff_date:
+                continue
+
+            records = scrap_data['by_date'][date_str]
+            total_parts = 0
+            total_ok = 0
+            total_nok = 0
+
+            for record in records:
+                total_parts += record.get('_total_parts', 0) or 0
+                total_ok += record.get('_total_ok', 0) or 0
+                total_nok += record.get('_total_nok', 0) or 0
+
+            if total_parts > 0:
+                scrap_rate = (total_nok / total_parts * 100)
+                quality_rate = (total_ok / total_parts * 100)
+
+                daily_summary.append({
+                    'date': date_str,
+                    'date_label': date_obj.strftime('%b %d'),
+                    'total_parts': total_parts,
+                    'total_ok': total_ok,
+                    'total_nok': total_nok,
+                    'scrap_rate': round(scrap_rate, 2),
+                    'quality_rate': round(quality_rate, 2)
+                })
+        except:
+            continue
+
+    # Reverse to show oldest to newest
+    daily_summary.reverse()
+
+    return daily_summary
 
 def calculate_machine_stats(scrap_data):
     """Calculate statistics by machine"""
