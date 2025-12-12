@@ -316,6 +316,9 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     weekly_stats = calculate_weekly_stats(scrap_data)
     monthly_stats = calculate_monthly_stats(scrap_data)
 
+    # Calculate daily scrap rate for last 14 days
+    daily_stats = calculate_daily_stats(scrap_data, days=14)
+
     # Calculate statistics by machine
     machine_stats = calculate_machine_stats(scrap_data)
 
@@ -339,6 +342,7 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     category_json = json.dumps(category_data)
     weekly_stats_json = json.dumps(weekly_stats)
     monthly_stats_json = json.dumps(monthly_stats)
+    daily_stats_json = json.dumps(daily_stats)
 
     # Current date and time
     current_datetime = datetime.now().strftime("%B %d, %Y at %I:%M %p")
@@ -352,6 +356,7 @@ def generate_scrap_dashboard(scrap_data, excel_file):
     <title>SCRAP RATE BI Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
     <style>
         * {{
             margin: 0;
@@ -676,9 +681,19 @@ def generate_scrap_dashboard(scrap_data, excel_file):
             <!-- Charts Grid -->
             <div class="charts-full">
                 <div class="chart-container">
-                    <h3 class="chart-title">Scrap Rate Over Time</h3>
+                    <h3 class="chart-title">📊 Weekly Scrap Rate Trend (Easier to Read)</h3>
                     <div class="chart-wrapper">
-                        <canvas id="trendChart"></canvas>
+                        <canvas id="weeklyTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Daily Scrap Rate Section -->
+            <div class="charts-full">
+                <div class="chart-container">
+                    <h3 class="chart-title">📅 Daily Scrap Rate - Last 14 Days</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="dailyTrendChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -817,6 +832,7 @@ def generate_scrap_dashboard(scrap_data, excel_file):
         const categoryData = {category_json};
         const weeklyStats = {weekly_stats_json};
         const monthlyStats = {monthly_stats_json};
+        const dailyStats = {daily_stats_json};
 
         // Chart colors (red theme)
         const chartColors = {{
@@ -830,7 +846,8 @@ def generate_scrap_dashboard(scrap_data, excel_file):
 
         // Initialize charts on page load
         document.addEventListener('DOMContentLoaded', function() {{
-            createTrendChart();
+            createWeeklyTrendChart();
+            createDailyTrendChart();
             createMachineChart();
             createDistributionChart();
             createCategoryChart();
@@ -839,26 +856,34 @@ def generate_scrap_dashboard(scrap_data, excel_file):
             populateTables();
         }});
 
-        function createTrendChart() {{
-            const ctx = document.getElementById('trendChart').getContext('2d');
+        function createWeeklyTrendChart() {{
+            const ctx = document.getElementById('weeklyTrendChart').getContext('2d');
+
+            // Prepare weekly data for chart
+            const weeklyLabels = weeklyStats.map(w => w.week_label);
+            const weeklyRates = weeklyStats.map(w => w.scrap_rate);
+
+            // Reverse to show oldest to newest
+            weeklyLabels.reverse();
+            weeklyRates.reverse();
 
             new Chart(ctx, {{
                 type: 'line',
                 data: {{
-                    labels: trendData.labels,
+                    labels: weeklyLabels,
                     datasets: [{{
-                        label: 'Scrap Rate (%)',
-                        data: trendData.scrap_rates,
+                        label: 'Weekly Scrap Rate (%)',
+                        data: weeklyRates,
                         borderColor: chartColors.danger,
                         backgroundColor: 'rgba(220, 38, 38, 0.1)',
-                        borderWidth: 3,
+                        borderWidth: 4,
                         fill: true,
-                        tension: 0.4,
-                        pointRadius: 5,
-                        pointHoverRadius: 7,
+                        tension: 0.3,
+                        pointRadius: 8,
+                        pointHoverRadius: 10,
                         pointBackgroundColor: chartColors.danger,
                         pointBorderColor: '#ffffff',
-                        pointBorderWidth: 2
+                        pointBorderWidth: 3
                     }}]
                 }},
                 options: {{
@@ -870,9 +895,29 @@ def generate_scrap_dashboard(scrap_data, excel_file):
                             position: 'top',
                             labels: {{
                                 font: {{
-                                    size: 13,
+                                    size: 14,
                                     weight: '600'
                                 }}
+                            }}
+                        }},
+                        datalabels: {{
+                            display: true,
+                            align: 'top',
+                            backgroundColor: 'rgba(220, 38, 38, 0.95)',
+                            color: '#ffffff',
+                            borderRadius: 4,
+                            padding: {{
+                                top: 4,
+                                bottom: 4,
+                                left: 8,
+                                right: 8
+                            }},
+                            font: {{
+                                size: 12,
+                                weight: 'bold'
+                            }},
+                            formatter: function(value) {{
+                                return value.toFixed(2) + '%';
                             }}
                         }},
                         tooltip: {{
@@ -894,6 +939,11 @@ def generate_scrap_dashboard(scrap_data, excel_file):
                         x: {{
                             grid: {{
                                 color: 'rgba(149, 165, 166, 0.2)'
+                            }},
+                            ticks: {{
+                                font: {{
+                                    size: 11
+                                }}
                             }}
                         }},
                         y: {{
@@ -901,6 +951,108 @@ def generate_scrap_dashboard(scrap_data, excel_file):
                             ticks: {{
                                 callback: function(value) {{
                                     return value + '%';
+                                }},
+                                font: {{
+                                    size: 12
+                                }}
+                            }},
+                            grid: {{
+                                color: 'rgba(149, 165, 166, 0.2)'
+                            }}
+                        }}
+                    }}
+                }}
+            }});
+        }}
+
+        function createDailyTrendChart() {{
+            const ctx = document.getElementById('dailyTrendChart').getContext('2d');
+
+            // Prepare daily data for chart (last 14 days)
+            const dailyLabels = dailyStats.map(d => d.date_label);
+            const dailyRates = dailyStats.map(d => d.scrap_rate);
+
+            new Chart(ctx, {{
+                type: 'bar',
+                data: {{
+                    labels: dailyLabels,
+                    datasets: [{{
+                        label: 'Daily Scrap Rate (%)',
+                        data: dailyRates,
+                        backgroundColor: dailyRates.map(rate =>
+                            rate > 5 ? 'rgba(220, 38, 38, 0.8)' :
+                            rate > 2 ? 'rgba(245, 158, 11, 0.8)' :
+                            'rgba(34, 197, 94, 0.8)'
+                        ),
+                        borderColor: dailyRates.map(rate =>
+                            rate > 5 ? chartColors.danger :
+                            rate > 2 ? chartColors.warning :
+                            chartColors.success
+                        ),
+                        borderWidth: 2,
+                        borderRadius: 6
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{
+                            display: false
+                        }},
+                        datalabels: {{
+                            display: true,
+                            anchor: 'end',
+                            align: 'top',
+                            color: '#2c3e50',
+                            font: {{
+                                size: 11,
+                                weight: 'bold'
+                            }},
+                            formatter: function(value) {{
+                                return value.toFixed(2) + '%';
+                            }}
+                        }},
+                        tooltip: {{
+                            backgroundColor: 'rgba(44, 62, 80, 0.9)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            borderColor: chartColors.primary,
+                            borderWidth: 1,
+                            cornerRadius: 6,
+                            padding: 12,
+                            callbacks: {{
+                                label: function(context) {{
+                                    const index = context.dataIndex;
+                                    const day = dailyStats[index];
+                                    return [
+                                        'Scrap Rate: ' + day.scrap_rate.toFixed(2) + '%',
+                                        'Parts: ' + day.total_parts.toLocaleString(),
+                                        'NOK: ' + day.total_nok.toLocaleString()
+                                    ];
+                                }}
+                            }}
+                        }}
+                    }},
+                    scales: {{
+                        x: {{
+                            grid: {{
+                                display: false
+                            }},
+                            ticks: {{
+                                font: {{
+                                    size: 10
+                                }}
+                            }}
+                        }},
+                        y: {{
+                            beginAtZero: true,
+                            ticks: {{
+                                callback: function(value) {{
+                                    return value + '%';
+                                }},
+                                font: {{
+                                    size: 11
                                 }}
                             }},
                             grid: {{
@@ -1341,6 +1493,63 @@ def calculate_monthly_stats(scrap_data):
         })
 
     return monthly_summary
+
+def calculate_daily_stats(scrap_data, days=14):
+    """Calculate daily scrap rate for last N days"""
+    from datetime import datetime, timedelta
+
+    # Get the latest date in data
+    sorted_dates = sorted(scrap_data['by_date'].keys(), reverse=True)
+    if not sorted_dates:
+        return []
+
+    try:
+        latest_date = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
+    except:
+        return []
+
+    # Calculate cutoff date
+    cutoff_date = latest_date - timedelta(days=days-1)
+
+    daily_summary = []
+
+    for date_str in sorted_dates[:days]:  # Get last N days
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+
+            if date_obj < cutoff_date:
+                continue
+
+            records = scrap_data['by_date'][date_str]
+            total_parts = 0
+            total_ok = 0
+            total_nok = 0
+
+            for record in records:
+                total_parts += record.get('_total_parts', 0) or 0
+                total_ok += record.get('_total_ok', 0) or 0
+                total_nok += record.get('_total_nok', 0) or 0
+
+            if total_parts > 0:
+                scrap_rate = (total_nok / total_parts * 100)
+                quality_rate = (total_ok / total_parts * 100)
+
+                daily_summary.append({
+                    'date': date_str,
+                    'date_label': date_obj.strftime('%b %d'),
+                    'total_parts': total_parts,
+                    'total_ok': total_ok,
+                    'total_nok': total_nok,
+                    'scrap_rate': round(scrap_rate, 2),
+                    'quality_rate': round(quality_rate, 2)
+                })
+        except:
+            continue
+
+    # Reverse to show oldest to newest
+    daily_summary.reverse()
+
+    return daily_summary
 
 def calculate_machine_stats(scrap_data):
     """Calculate statistics by machine"""
